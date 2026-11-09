@@ -33,7 +33,25 @@ cd C:\Users\erike\Rust\mic_filter
 cargo run --release
 ```
 
-A settings window and system-tray icon appear. Tray actions: Open settings, Start/Stop, Toggle mute, Quit.
+A settings window and system-tray icon appear. Tray actions: Open settings, Start/Stop, Toggle mute, Toggle mic test, Quit.
+
+### Mic test (monitor)
+
+Use **Mic Test** to play the *filtered* signal to headphones/speakers so you can verify RNNoise and dynamics without opening Discord:
+
+1. Start processing.
+2. Choose a **monitor playback device** (headphones preferred — avoid speakers next to the mic).
+3. Click **Apply monitor device** if you changed it.
+4. Toggle **Mic Test ON** (toolbar, tray, or the Mic Test section).
+5. Watch the **green / yellow / red** level bars while speaking.
+
+| Zone | Range |
+|------|--------|
+| Green | below −12 dBFS |
+| Yellow | −12 to −6 dBFS |
+| Red | above −6 dBFS |
+
+Monitor volume is independent of the VB-Cable output gain.
 
 ## Configuration
 

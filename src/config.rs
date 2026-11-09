@@ -14,27 +14,34 @@ const CONFIG_NAME: &str = "config.toml";
 pub struct AppConfig {
     pub input_device: Option<String>,
     pub output_device: Option<String>,
+    /// Local playback device for mic-test monitoring (headphones/speakers).
+    pub monitor_device: Option<String>,
     pub highpass_enabled: bool,
     pub highpass_hz: f32,
     pub rnnoise_enabled: bool,
     pub expander: ExpanderConfig,
     pub compressor: CompressorConfig,
     pub master_gain_db: f32,
+    pub monitor_enabled: bool,
+    pub monitor_gain_db: f32,
     pub start_processing: bool,
     pub start_minimized: bool,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
-        Self {
+Self {
             input_device: None,
             output_device: None,
+            monitor_device: None,
             highpass_enabled: true,
             highpass_hz: 80.0,
             rnnoise_enabled: true,
             expander: ExpanderConfig::default(),
             compressor: CompressorConfig::default(),
             master_gain_db: 0.0,
+            monitor_enabled: false,
+            monitor_gain_db: -6.0,
             start_processing: true,
             start_minimized: false,
         }
@@ -143,7 +150,9 @@ pub struct LiveParams {
     pub compressor_release_ms: AtomicF32,
     pub compressor_knee_db: AtomicF32,
     pub compressor_makeup_db: AtomicF32,
-    pub master_gain_db: AtomicF32,
+pub master_gain_db: AtomicF32,
+    pub monitor_enabled: AtomicBool,
+    pub monitor_gain_db: AtomicF32,
     pub muted: AtomicBool,
     pub running: AtomicBool,
 }
@@ -168,7 +177,9 @@ impl LiveParams {
             compressor_release_ms: AtomicF32::new(cfg.compressor.release_ms),
             compressor_knee_db: AtomicF32::new(cfg.compressor.knee_db),
             compressor_makeup_db: AtomicF32::new(cfg.compressor.makeup_db),
-            master_gain_db: AtomicF32::new(cfg.master_gain_db),
+master_gain_db: AtomicF32::new(cfg.master_gain_db),
+            monitor_enabled: AtomicBool::new(cfg.monitor_enabled),
+            monitor_gain_db: AtomicF32::new(cfg.monitor_gain_db),
             muted: AtomicBool::new(false),
             running: AtomicBool::new(false),
         })
@@ -208,8 +219,12 @@ pub fn apply_config(&self, cfg: &AppConfig) {
             .store(cfg.compressor.knee_db, Ordering::Relaxed);
         self.compressor_makeup_db
             .store(cfg.compressor.makeup_db, Ordering::Relaxed);
-        self.master_gain_db
+self.master_gain_db
             .store(cfg.master_gain_db, Ordering::Relaxed);
+        self.monitor_enabled
+            .store(cfg.monitor_enabled, Ordering::Relaxed);
+        self.monitor_gain_db
+            .store(cfg.monitor_gain_db, Ordering::Relaxed);
     }
 
     pub fn snapshot_into(&self, cfg: &mut AppConfig) {
@@ -229,8 +244,10 @@ pub fn apply_config(&self, cfg: &AppConfig) {
         cfg.compressor.attack_ms = self.compressor_attack_ms.load(Ordering::Relaxed);
         cfg.compressor.release_ms = self.compressor_release_ms.load(Ordering::Relaxed);
         cfg.compressor.knee_db = self.compressor_knee_db.load(Ordering::Relaxed);
-        cfg.compressor.makeup_db = self.compressor_makeup_db.load(Ordering::Relaxed);
-cfg.master_gain_db = self.master_gain_db.load(Ordering::Relaxed);
+cfg.compressor.makeup_db = self.compressor_makeup_db.load(Ordering::Relaxed);
+        cfg.master_gain_db = self.master_gain_db.load(Ordering::Relaxed);
+        cfg.monitor_enabled = self.monitor_enabled.load(Ordering::Relaxed);
+        cfg.monitor_gain_db = self.monitor_gain_db.load(Ordering::Relaxed);
     }
 }
 

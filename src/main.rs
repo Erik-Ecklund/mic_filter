@@ -29,7 +29,8 @@ fn main() -> eframe::Result<()> {
     let item_show = MenuItem::new("Open settings", true, None);
     let item_start = MenuItem::new("Start", true, None);
     let item_stop = MenuItem::new("Stop", true, None);
-    let item_mute = MenuItem::new("Toggle mute", true, None);
+let item_mute = MenuItem::new("Toggle mute", true, None);
+    let item_monitor = MenuItem::new("Toggle mic test", true, None);
     let item_quit = MenuItem::new("Quit", true, None);
     let _ = tray_menu.append_items(&[
         &item_show,
@@ -37,6 +38,7 @@ fn main() -> eframe::Result<()> {
         &item_start,
         &item_stop,
         &item_mute,
+        &item_monitor,
         &PredefinedMenuItem::separator(),
         &item_quit,
     ]);
@@ -53,7 +55,8 @@ fn main() -> eframe::Result<()> {
     let show_id = item_show.id().clone();
     let start_id = item_start.id().clone();
     let stop_id = item_stop.id().clone();
-    let mute_id = item_mute.id().clone();
+let mute_id = item_mute.id().clone();
+    let monitor_id = item_monitor.id().clone();
     let quit_id = item_quit.id().clone();
 
     let mut state = AppState::new(
@@ -105,7 +108,7 @@ fn main() -> eframe::Result<()> {
                     app.state.start_engine();
                 } else if event.id == stop_id {
                     app.state.stop_engine();
-                } else if event.id == mute_id {
+} else if event.id == mute_id {
                     let m = app
                         .state
                         .params
@@ -115,6 +118,17 @@ fn main() -> eframe::Result<()> {
                         .params
                         .muted
                         .store(!m, std::sync::atomic::Ordering::Relaxed);
+                } else if event.id == monitor_id {
+                    let m = app
+                        .state
+                        .params
+                        .monitor_enabled
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    app.state
+                        .params
+                        .monitor_enabled
+                        .store(!m, std::sync::atomic::Ordering::Relaxed);
+                    app.state.config.monitor_enabled = !m;
                 } else if event.id == quit_id {
                     *app.state.quit_requested.lock() = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);

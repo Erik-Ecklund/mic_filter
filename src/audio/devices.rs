@@ -84,8 +84,51 @@ pub fn find_output_device(preferred: Option<&str>) -> anyhow::Result<cpal::Devic
         }
     }
 
-    host.default_output_device()
+host.default_output_device()
         .ok_or_else(|| anyhow::anyhow!("no default output device"))
+}
+
+/// Playback device for local mic-test monitoring (prefer real speakers/headphones).
+pub fn find_monitor_device(
+    preferred: Option<&str>,
+    cable_output_name: Option<&str>,
+) -> anyhow::Result<cpal::Device> {
+    let host = cpal::default_host();
+    if let Some(name) = preferred {
+        for device in host.output_devices()? {
+            if device.name().ok().as_deref() == Some(name) {
+                return Ok(device);
+            }
+        }
+        tracing::warn!(%name, "preferred monitor device not found; falling back");
+    }
+
+    // Prefer the system default playback device when it is not the virtual cable.
+    if let Some(default) = host.default_output_device() {
+        if let Ok(name) = default.name() {
+            let is_cable = is_vb_cable_output_target(&name) || is_vb_cable_name(&name);
+            let same_as_main = cable_output_name == Some(name.as_str());
+            if !is_cable && !same_as_main {
+                return Ok(default);
+            }
+        }
+    }
+
+    // Otherwise first non-cable output.
+    for device in host.output_devices()? {
+        if let Ok(name) = device.name() {
+            if is_vb_cable_output_target(&name) || is_vb_cable_name(&name) {
+                continue;
+            }
+            if cable_output_name == Some(name.as_str()) {
+                continue;
+            }
+            return Ok(device);
+        }
+    }
+
+    host.default_output_device()
+        .ok_or_else(|| anyhow::anyhow!("no monitor playback device"))
 }
 
 pub(crate) fn is_vb_cable_name(name: &str) -> bool {
