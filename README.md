@@ -12,8 +12,12 @@ The default chain preserves the original processing order:
 4. **Soft-knee compressor** — evening out speech dynamics  
 5. **Gain** — output trim
 
-In **Filter chain**, use **Add filter** to append a processor, **Up** / **Down** to
-reorder it, and **Remove** to delete it. Uncheck **Enabled** to bypass an instance
+In **Filter chain**, use **Add filter** to append a processor. Drag the dotted
+grip on a filter card to reorder it; a colored line shows the insertion point.
+The list scrolls when you hold a dragged filter near the viewport's top or bottom
+edge. Release to apply the new order, or press **Escape** to cancel. You can also
+use **Up** / **Down** to reorder and **Remove** to delete a filter.
+Uncheck **Enabled** to bypass an instance
 without losing its settings. Multiple instances of the same type are supported;
 each has independent settings and DSP state. An empty chain passes audio through.
 
