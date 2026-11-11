@@ -182,7 +182,10 @@ egui::TopBottomPanel::top("top").show(ctx, |ui| {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+egui::CentralPanel::default().show(ctx, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
             ui.heading("Mic Processor");
             ui.label("Noise Suppression (RNNoise) → Expander → Compressor → Virtual Cable");
             ui.separator();
@@ -648,12 +651,14 @@ egui::CollapsingHeader::new("Compressor")
                         );
                 });
 
-            ui.separator();
+ui.separator();
             ui.small(
                 "Tip: Install VB-Cable, set this app's output to \"CABLE Input\", and set apps \
                  (Discord/Zoom) to use \"CABLE Output\" as their microphone. Use Mic Test with \
                  headphones to verify the chain.",
             );
+            ui.add_space(12.0);
+                }); // ScrollArea
         });
     }
 
