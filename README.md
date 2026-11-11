@@ -1,14 +1,26 @@
 # Mic Processor (`mic_filter`)
 
-Real-time microphone conditioner for Windows. Captures your physical mic, runs a fixed DSP chain, and writes the result to a virtual cable so Discord / Zoom / browsers can use the cleaned signal as their microphone.
+Real-time microphone conditioner for Windows. Captures your physical mic, runs a configurable DSP chain, and writes the result to a virtual cable so Discord / Zoom / browsers can use the cleaned signal as their microphone.
 
 ## Processing chain
+
+The default chain preserves the original processing order:
 
 1. **High-pass** (~80 Hz Butterworth) — optional rumble filter  
 2. **RNNoise** (`nnnoiseless`) — neural noise suppression at 48 kHz / 480-sample frames  
 3. **Downward expander** — quiets residual noise in pauses  
 4. **Soft-knee compressor** — evening out speech dynamics  
-5. **Master gain**
+5. **Gain** — output trim
+
+In **Filter chain**, use **Add filter** to append a processor, **Up** / **Down** to
+reorder it, and **Remove** to delete it. Uncheck **Enabled** to bypass an instance
+without losing its settings. Multiple instances of the same type are supported;
+each has independent settings and DSP state. An empty chain passes audio through.
+
+Edits apply at the next available audio block without restarting devices. Surviving
+instances retain their state when reordered or adjusted. Click **Save** to persist
+the chain. Mute always runs after the entire chain; monitor volume is separate.
+Changes are not crossfaded, so abrupt gain/order changes can be audible.
 
 Audio I/O uses **cpal** (WASAPI on Windows) with lock-free **ringbuf** queues and a dedicated DSP thread.
 
@@ -64,14 +76,35 @@ Persisted to:
 | Setting | Meaning |
 |--------|---------|
 | `input_device` / `output_device` | Friendly device names |
-| `highpass_*` | Pre-RNNoise HPF |
-| `rnnoise_enabled` | Toggle noise suppression |
-| `expander.*` | threshold, ratio, attack/release/hold, range |
-| `compressor.*` | threshold, ratio, attack/release, knee, makeup |
-| `master_gain_db` | Final output gain |
+| `filters` | Ordered list of independent filter instances |
+| `filters[].id` | Stable instance identity (assigned automatically if omitted) |
+| `filters[].type` | `high_pass`, `rnnoise`, `expander`, `compressor`, or `gain` |
+| `filters[].enabled` | Bypass toggle for this instance |
+| Other filter fields | `cutoff_hz`, `gain_db`, or dynamics parameters as appropriate |
 | `start_processing` | Auto-start engine on launch |
 
-Live parameter changes apply immediately (atomics). Device changes need **Apply devices (restart)**.
+Legacy configs are migrated automatically, preserving filter values, bypass flags,
+and the original order. An explicit `filters = []` means no filters, not defaults.
+New saves use the ordered format. For example:
+
+```toml
+[[filters]]
+id = 1
+type = "high_pass"
+enabled = true
+cutoff_hz = 80.0
+
+[[filters]]
+id = 2
+type = "gain"
+enabled = true
+gain_db = -3.0
+```
+
+The UI publishes complete chain snapshots. DSP uses a non-blocking mutex read at
+block boundaries; device callbacks do not access it. Filter construction and
+reconfiguration happen on the dedicated DSP thread only when settings change.
+Device changes need **Apply devices (restart)**.
 
 ## Latency & performance
 
@@ -85,9 +118,10 @@ Live parameter changes apply immediately (atomics). Device changes need **Apply 
 src/
   main.rs          # tray + egui event loop
   ui.rs            # settings UI
+  ui/filters.rs    # ordered filter editor
   config.rs        # TOML config + LiveParams
   audio/           # devices, engine, meters
-  dsp/             # HPF, RNNoise, expander, compressor, chain
+  dsp/             # processors, common filter interface/factory, ordered chain
 plan.md
 ```
 
@@ -97,6 +131,17 @@ plan.md
 - VST hosting
 - Cross-platform polish (Windows-first; cpal may work elsewhere but is untested)
 - Automatic VB-Cable install
+
+## Adding a new built-in filter
+
+1. Add typed settings and a `FilterSettings` / `FilterKind` variant in `src/config.rs`,
+   including its label and defaults in `FilterKind::ALL`.
+2. Implement `AudioFilter` (`configure` and in-place `process`, mono 48 kHz) and
+   register construction in `src/dsp/filter.rs`. Processor state belongs to each
+   instance. The chain handles ordering and bypass without filter-specific code.
+3. Add parameter widgets to `src/ui/filters.rs` and DSP/config regression tests.
+
+Run `cargo test` and `cargo clippy --all-targets` to validate changes.
 
 ## License
 
