@@ -101,6 +101,21 @@ impl AppState {
         self.set_monitor_enabled(!self.params.monitor_enabled.load(Ordering::Relaxed));
     }
 
+    pub(super) fn start_tuning_replay(&mut self) {
+        let status = self.engine.status();
+        if !self.engine.is_running() || status.monitor_rate.load(Ordering::Relaxed) == 0 {
+            self.status_message =
+                "Start processing with a headphone monitor device to replay.".into();
+            return;
+        }
+        let tuning = self.params.tuning.snapshot();
+        if tuning.recording || tuning.seconds == 0.0 {
+            return;
+        }
+        self.set_monitor_enabled(true);
+        self.params.tuning.play();
+    }
+
     pub(super) fn apply_devices(&mut self) {
         if self.engine.is_running() {
             self.start_engine();

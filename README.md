@@ -69,6 +69,34 @@ Use **Mic Test** to play the *filtered* signal to headphones/speakers so you can
 
 Monitor volume is independent of the VB-Cable output gain.
 
+### Record-and-replay tuning
+
+Use **Record & replay tuning** to adjust filters against the same speech:
+
+1. Start processing and select/apply a headphone monitor device.
+2. Click **Record dry mic**, speak normally, then **Stop recording / replay**.
+   Recording stops automatically at 30 seconds. It captures 48 kHz mono audio
+   before all filters and mute; muting the output does not stop recording.
+3. Click **Loop in headphones**. This enables Mic Test and loops the clip through
+   a separate copy of the current filter chain. Edit filters as usual to hear
+   their effect without speaking again.
+4. Switch **Original** / **Processed** to compare. Optional approximate RMS
+   matching attenuates the louder signal with roughly 500 ms smoothing; it does
+   not boost quiet audio, measure perceptual loudness, or prevent clipping.
+5. Stop replay to return to live monitoring. **Record new clip** replaces the
+   previous recording; **Clear clip** discards it.
+
+**Replay is monitor-only and is never sent to the virtual cable. The cable keeps
+transmitting your live, filtered microphone during tuning.** Global mute silences
+both outputs, and monitor volume remains independent. Use headphones, not speakers.
+The level meters continue to show the live input/cable signal, not replay.
+
+Clips are held only in memory (about 5.8 MB maximum), not saved or exported.
+Stopping/restarting devices stops recording/replay but retains the clip until you
+clear it or quit. Replay is paced by incoming mic blocks, so capture must remain
+active. Filter state persists across loop boundaries; edits and loop seams are
+not crossfaded and can be audible.
+
 ## Configuration
 
 Persisted to:

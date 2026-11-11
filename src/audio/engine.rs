@@ -248,6 +248,7 @@ impl AudioEngine {
                 let _ = handle.join();
             }
         }
+        self.params.tuning.stop();
         self.params.running.store(false, Ordering::Relaxed);
     }
 }

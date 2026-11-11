@@ -125,7 +125,8 @@ pub(super) fn process_loop(
         stop,
         rates,
     } = context;
-    let mut chain = DspChain::new(params);
+    let mut chain = DspChain::new(params.clone());
+    let mut replay_chain = None;
     let mut input_resampler = optional_resampler(rates.input, PROCESS_RATE, "input", &status);
     let mut output = OutputSink {
         producer: playback,
@@ -142,6 +143,7 @@ pub(super) fn process_loop(
     let mut captured = Vec::with_capacity(PROCESS_CHUNK * 4);
     let mut resampled = Vec::with_capacity(PROCESS_CHUNK * 4);
     let mut work = [0.0; PROCESS_CHUNK];
+    let mut monitor_work = [0.0; PROCESS_CHUNK];
 
     while !stop.load(Ordering::SeqCst) {
         let available = capture.occupied_len();
@@ -172,11 +174,26 @@ pub(super) fn process_loop(
         while pending.len() >= PROCESS_CHUNK {
             work.copy_from_slice(&pending[..PROCESS_CHUNK]);
             pending.drain(..PROCESS_CHUNK);
+            let dry = work;
             chain.process(&mut work);
             meters.push_output(&work);
             output.write(&work, &status);
+            params
+                .tuning
+                .process(&dry, &work, &mut monitor_work, |samples, reset| {
+                    if reset || replay_chain.is_none() {
+                        replay_chain = Some(DspChain::new(params.clone()));
+                    }
+                    if let Some(chain) = &mut replay_chain {
+                        chain.process(samples);
+                    }
+                });
+            // Original comparison bypasses the chain, but never global mute.
+            if params.muted.load(Ordering::Relaxed) {
+                monitor_work.fill(0.0);
+            }
             if let Some(monitor) = &mut monitor {
-                monitor.write(&work, &status);
+                monitor.write(&monitor_work, &status);
             }
         }
     }
@@ -245,6 +262,87 @@ mod tests {
         let status = EngineStatus::new();
         assert!(optional_resampler(PROCESS_RATE, PROCESS_RATE, "output", &status).is_none());
         assert!(optional_resampler(PROCESS_RATE, 0, "monitor", &status).is_none());
+    }
+
+    #[test]
+    fn replay_stays_on_monitor_tracks_edits_and_respects_mute() {
+        use crate::audio::Comparison;
+        use crate::config::{AppConfig, FilterConfig, FilterSettings, GainConfig};
+        use std::time::Instant;
+
+        let params = LiveParams::from_config(&AppConfig {
+            filters: Vec::new(),
+            ..AppConfig::default()
+        });
+        let (mut capture, capture_consumer) = HeapRb::<f32>::new(PROCESS_CHUNK * 4).split();
+        let (playback, mut cable) = HeapRb::<f32>::new(PROCESS_CHUNK * 4).split();
+        let (monitor, mut headphones) = HeapRb::<f32>::new(PROCESS_CHUNK * 4).split();
+        let stop = Arc::new(AtomicBool::new(false));
+        let context = ProcessingContext {
+            params: params.clone(),
+            meters: LevelMeters::new(),
+            status: EngineStatus::new(),
+            stop: stop.clone(),
+            rates: ProcessingRates {
+                input: PROCESS_RATE,
+                output: PROCESS_RATE,
+                monitor: PROCESS_RATE,
+            },
+        };
+        let worker = thread::spawn(move || {
+            process_loop(capture_consumer, playback, Some(monitor), context);
+        });
+        let mut exchange = |input: f32| {
+            assert_eq!(capture.push_slice(&[input; PROCESS_CHUNK]), PROCESS_CHUNK);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while (cable.occupied_len() < PROCESS_CHUNK
+                || headphones.occupied_len() < PROCESS_CHUNK)
+                && Instant::now() < deadline
+            {
+                thread::sleep(Duration::from_millis(1));
+            }
+            let mut output = [0.0; PROCESS_CHUNK];
+            let mut monitor = [0.0; PROCESS_CHUNK];
+            assert_eq!(cable.pop_slice(&mut output), PROCESS_CHUNK);
+            assert_eq!(headphones.pop_slice(&mut monitor), PROCESS_CHUNK);
+            (output, monitor)
+        };
+        params.tuning.record();
+        params.muted.store(true, Ordering::Relaxed);
+        assert_eq!(
+            exchange(0.125),
+            ([0.0; PROCESS_CHUNK], [0.0; PROCESS_CHUNK])
+        );
+        params.tuning.stop();
+        params.muted.store(false, Ordering::Relaxed);
+        params.tuning.set_comparison(Comparison::Processed, false);
+        params.tuning.play();
+        assert_eq!(
+            exchange(0.5),
+            ([0.5; PROCESS_CHUNK], [0.125; PROCESS_CHUNK])
+        );
+        params.publish_filters(&[FilterConfig::new(
+            1,
+            FilterSettings::Gain(GainConfig {
+                enabled: true,
+                gain_db: -6.020_6,
+            }),
+        )]);
+        let (cable, monitor) = exchange(0.5);
+        assert!(cable.iter().all(|s| (*s - 0.25).abs() < 1e-6));
+        assert!(monitor.iter().all(|s| (*s - 0.0625).abs() < 1e-6));
+        params.tuning.set_comparison(Comparison::Original, false);
+        let (_, monitor) = exchange(0.5);
+        assert_eq!(monitor, [0.125; PROCESS_CHUNK]);
+        params.muted.store(true, Ordering::Relaxed);
+        assert_eq!(exchange(0.5), ([0.0; PROCESS_CHUNK], [0.0; PROCESS_CHUNK]));
+        params.muted.store(false, Ordering::Relaxed);
+        params.tuning.stop();
+        let (cable, monitor) = exchange(0.5);
+        assert_eq!(cable, monitor);
+        assert!(monitor.iter().all(|s| (*s - 0.25).abs() < 1e-6));
+        stop.store(true, Ordering::SeqCst);
+        worker.join().unwrap();
     }
 
     #[test]

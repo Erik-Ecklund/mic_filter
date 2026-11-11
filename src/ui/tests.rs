@@ -57,3 +57,25 @@ fn shared_actions_keep_monitor_state_in_sync() {
     app.state.toggle_mute();
     assert!(!app.state.params.muted.load(Ordering::Relaxed));
 }
+
+#[test]
+fn tuning_replay_requires_running_monitor_and_does_not_enable_it_on_failure() {
+    let mut app = app(AppConfig::default());
+    app.state.set_monitor_enabled(false);
+    app.state.start_tuning_replay();
+    assert!(!app.state.params.tuning.snapshot().playing);
+    assert!(!app.state.params.monitor_enabled.load(Ordering::Relaxed));
+    assert!(app.state.status_message.contains("headphone"));
+}
+
+#[test]
+fn tuning_panel_renders_recording_state_without_persisting_clip_settings() {
+    let mut app = app(AppConfig::default());
+    let before = app.state.config.clone();
+    app.state.params.tuning.record();
+    let ctx = egui::Context::default();
+    let _ = ctx.run(egui::RawInput::default(), |ctx| app.show(ctx));
+    assert_eq!(app.state.config, before);
+    app.state.engine.stop();
+    assert!(!app.state.params.tuning.snapshot().recording);
+}

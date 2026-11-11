@@ -6,6 +6,7 @@ mod filters;
 mod panels;
 mod state;
 mod tray;
+mod tuning;
 mod widgets;
 
 #[cfg(test)]
@@ -30,6 +31,7 @@ impl MicProcessorApp {
                 ui.separator();
                 self.state.levels_panel(ui);
                 self.state.monitor_panel(ui);
+                self.state.tuning_panel(ui);
                 self.state.devices_panel(ui);
                 if filters::filter_chain_ui(ui, &mut self.state.config.filters, &mut self.state.next_filter_id) {
                     self.state.params.publish_filters(&self.state.config.filters);

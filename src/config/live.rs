@@ -9,6 +9,7 @@ use super::{AppConfig, FilterConfig};
 /// Global atomics and ordered settings shared with the DSP thread.
 /// Audio callbacks never access this mutex; DSP only uses try_lock.
 pub struct LiveParams {
+    pub tuning: crate::audio::Tuning,
     pub filters: Mutex<Vec<FilterConfig>>,
     pub monitor_enabled: AtomicBool,
     pub monitor_gain_db: AtomicF32,
@@ -19,6 +20,7 @@ pub struct LiveParams {
 impl LiveParams {
     pub fn from_config(cfg: &AppConfig) -> Arc<Self> {
         Arc::new(Self {
+            tuning: crate::audio::Tuning::new(),
             filters: Mutex::new(cfg.filters.clone()),
             monitor_enabled: AtomicBool::new(cfg.monitor_enabled),
             monitor_gain_db: AtomicF32::new(cfg.monitor_gain_db),
