@@ -59,6 +59,7 @@ impl NoiseSuppressor {
         }
     }
 
+    #[allow(dead_code)] // Retained for explicit state resets; currently exercised only by tests.
     pub fn reset(&mut self) {
         self.state = DenoiseState::new();
         self.pending.clear();
