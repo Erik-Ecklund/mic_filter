@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use nnnoiseless::DenoiseState;
 
 const FRAME: usize = DenoiseState::FRAME_SIZE; // 480
@@ -9,7 +11,7 @@ pub struct NoiseSuppressor {
     pending: Vec<f32>,
     frame_in: [f32; FRAME],
     frame_out: [f32; FRAME],
-    out_queue: Vec<f32>,
+    out_queue: VecDeque<f32>,
     first_frame: bool,
 }
 
@@ -20,7 +22,7 @@ impl NoiseSuppressor {
             pending: Vec::with_capacity(FRAME),
             frame_in: [0.0; FRAME],
             frame_out: [0.0; FRAME],
-            out_queue: Vec::with_capacity(FRAME * 2),
+            out_queue: VecDeque::with_capacity(FRAME * 2),
             first_frame: true,
         }
     }
@@ -44,18 +46,18 @@ impl NoiseSuppressor {
                     self.first_frame = false;
                     // Compensate latency with silence so in/out lengths stay aligned.
                     for _ in 0..FRAME {
-                        self.out_queue.push(0.0);
+                        self.out_queue.push_back(0.0);
                     }
                 } else {
                     for &s in &self.frame_out {
-                        self.out_queue.push((s / I16_SCALE).clamp(-1.0, 1.0));
+                        self.out_queue.push_back((s / I16_SCALE).clamp(-1.0, 1.0));
                     }
                 }
             }
         }
 
         for out in output.iter_mut() {
-            *out = self.out_queue.pop_front_or_zero();
+            *out = self.out_queue.pop_front().unwrap_or(0.0);
         }
     }
 
@@ -65,20 +67,6 @@ impl NoiseSuppressor {
         self.pending.clear();
         self.out_queue.clear();
         self.first_frame = true;
-    }
-}
-
-trait PopFrontOrZero {
-    fn pop_front_or_zero(&mut self) -> f32;
-}
-
-impl PopFrontOrZero for Vec<f32> {
-    fn pop_front_or_zero(&mut self) -> f32 {
-        if self.is_empty() {
-            0.0
-        } else {
-            self.remove(0)
-        }
     }
 }
 
@@ -95,9 +83,7 @@ mod tests {
     #[test]
     fn process_preserves_length_and_bounds() {
         let mut ns = NoiseSuppressor::new();
-        let input: Vec<f32> = (0..1000)
-            .map(|i| ((i as f32) * 0.01).sin() * 0.2)
-            .collect();
+        let input: Vec<f32> = (0..1000).map(|i| ((i as f32) * 0.01).sin() * 0.2).collect();
         let mut output = vec![0.0; input.len()];
         ns.process(&input, &mut output);
         assert_eq!(output.len(), input.len());
@@ -138,5 +124,29 @@ mod tests {
         assert!(ns.pending.is_empty());
         assert!(ns.out_queue.is_empty());
         assert!(ns.first_frame);
+    }
+
+    #[test]
+    fn output_queue_is_fifo_and_underflow_is_silent() {
+        let mut ns = NoiseSuppressor::new();
+        ns.out_queue.extend([0.1, -0.2, 0.3]);
+        let mut out = [1.0; 5];
+        ns.process(&[0.0; 5], &mut out);
+        assert_eq!(out, [0.1, -0.2, 0.3, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn frame_aligned_chunks_match_a_single_call() {
+        let input: Vec<_> = (0..FRAME * 4)
+            .map(|i| (i as f32 * 0.03).sin() * 0.2)
+            .collect();
+        let mut whole = vec![0.0; input.len()];
+        let mut chunked = whole.clone();
+        NoiseSuppressor::new().process(&input, &mut whole);
+        let mut ns = NoiseSuppressor::new();
+        for (input, output) in input.chunks(FRAME).zip(chunked.chunks_mut(FRAME)) {
+            ns.process(input, output);
+        }
+        assert_eq!(whole, chunked);
     }
 }

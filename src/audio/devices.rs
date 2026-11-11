@@ -9,9 +9,7 @@ pub struct DeviceInfo {
 
 pub fn list_input_devices() -> anyhow::Result<Vec<DeviceInfo>> {
     let host = cpal::default_host();
-    let default_name = host
-        .default_input_device()
-        .and_then(|d| d.name().ok());
+    let default_name = host.default_input_device().and_then(|d| d.name().ok());
     let mut out = Vec::new();
     for device in host.input_devices()? {
         let name = device.name().unwrap_or_else(|_| "<unknown>".into());
@@ -28,9 +26,7 @@ pub fn list_input_devices() -> anyhow::Result<Vec<DeviceInfo>> {
 
 pub fn list_output_devices() -> anyhow::Result<Vec<DeviceInfo>> {
     let host = cpal::default_host();
-    let default_name = host
-        .default_output_device()
-        .and_then(|d| d.name().ok());
+    let default_name = host.default_output_device().and_then(|d| d.name().ok());
     let mut out = Vec::new();
     for device in host.output_devices()? {
         let name = device.name().unwrap_or_else(|_| "<unknown>".into());
@@ -75,16 +71,17 @@ pub fn find_output_device(preferred: Option<&str>) -> anyhow::Result<cpal::Devic
     // Auto-pick VB-Cable input if present.
     if let Ok(devices) = host.output_devices() {
         for device in devices {
-            if let Ok(name) = device.name() {
-                if is_vb_cable_output_target(&name) {
-                    tracing::info!(%name, "auto-selected VB-Cable output target");
-                    return Ok(device);
-                }
+            let Ok(name) = device.name() else {
+                continue;
+            };
+            if is_vb_cable_output_target(&name) {
+                tracing::info!(%name, "auto-selected VB-Cable output target");
+                return Ok(device);
             }
         }
     }
 
-host.default_output_device()
+    host.default_output_device()
         .ok_or_else(|| anyhow::anyhow!("no default output device"))
 }
 
@@ -104,14 +101,14 @@ pub fn find_monitor_device(
     }
 
     // Prefer the system default playback device when it is not the virtual cable.
-    if let Some(default) = host.default_output_device() {
-        if let Ok(name) = default.name() {
-            let is_cable = is_vb_cable_output_target(&name) || is_vb_cable_name(&name);
-            let same_as_main = cable_output_name == Some(name.as_str());
-            if !is_cable && !same_as_main {
-                return Ok(default);
-            }
-        }
+    if let Some(default) = host.default_output_device().filter(|device| {
+        device.name().is_ok_and(|name| {
+            !is_vb_cable_output_target(&name)
+                && !is_vb_cable_name(&name)
+                && cable_output_name != Some(name.as_str())
+        })
+    }) {
+        return Ok(default);
     }
 
     // Otherwise first non-cable output.
@@ -160,9 +157,13 @@ mod tests {
 
     #[test]
     fn output_target_prefers_cable_input() {
-        assert!(is_vb_cable_output_target("CABLE Input (VB-Audio Virtual Cable)"));
+        assert!(is_vb_cable_output_target(
+            "CABLE Input (VB-Audio Virtual Cable)"
+        ));
         assert!(is_vb_cable_output_target("VB-Audio Virtual Cable"));
-        assert!(!is_vb_cable_output_target("CABLE Output (VB-Audio Virtual Cable)"));
+        assert!(!is_vb_cable_output_target(
+            "CABLE Output (VB-Audio Virtual Cable)"
+        ));
         assert!(!is_vb_cable_output_target("Speakers (Realtek)"));
     }
 }

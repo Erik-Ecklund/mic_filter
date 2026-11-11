@@ -1,3 +1,5 @@
+use super::math::{db_to_lin, lin_to_db, time_to_coeff};
+
 /// Soft-knee feed-forward compressor with envelope detector.
 #[derive(Debug, Clone)]
 pub struct Compressor {
@@ -90,22 +92,6 @@ fn soft_knee_gain_reduction(level_db: f32, threshold: f32, ratio: f32, knee: f32
     } else {
         0.0
     }
-}
-
-#[inline]
-fn time_to_coeff(ms: f32, sample_rate: f32) -> f32 {
-    let t = (ms.max(0.01) * 0.001).max(1.0 / sample_rate);
-    (-1.0 / (t * sample_rate)).exp()
-}
-
-#[inline]
-fn lin_to_db(x: f32) -> f32 {
-    20.0 * x.log10()
-}
-
-#[inline]
-fn db_to_lin(db: f32) -> f32 {
-    10.0f32.powf(db * 0.05)
 }
 
 #[cfg(test)]

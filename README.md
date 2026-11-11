@@ -116,12 +116,30 @@ Device changes need **Apply devices (restart)**.
 
 ```
 src/
-  main.rs          # tray + egui event loop
-  ui.rs            # settings UI
-  ui/filters.rs    # ordered filter editor
-  config.rs        # TOML config + LiveParams
-  audio/           # devices, engine, meters
-  dsp/             # processors, common filter interface/factory, ordered chain
+  main.rs          # startup + egui event loop
+  ui.rs            # application/layout coordinator
+  ui/
+    state.rs       # shared application actions and settings state
+    panels.rs      # toolbar, levels, monitor, devices, startup
+    devices.rs     # reusable device selectors
+    filters.rs     # ordered filter editor
+    widgets.rs     # meters and atomic sliders
+    tray.rs        # tray ownership, events, and icon
+    tests.rs       # hardware-independent UI smoke tests
+  config.rs        # app config and TOML persistence
+  config/
+    filters.rs     # typed filter settings and defaults
+    legacy.rs      # backward-compatible loading and ID normalization
+    live.rs        # shared DSP snapshots and global atomics
+    tests.rs       # serialization and migration regression tests
+  audio/
+    devices.rs     # enumeration and device routing policy
+    engine.rs      # stream lifecycle and worker ownership
+    streams.rs     # format/config selection and callback construction
+    samples.rs     # allocation-free PCM conversion and ring I/O
+    processing.rs  # DSP worker, output sinks, buffered resampling
+    meters.rs      # shared peak meters
+  dsp/             # processors, common math, filter factory, ordered chain
 plan.md
 ```
 
@@ -134,7 +152,7 @@ plan.md
 
 ## Adding a new built-in filter
 
-1. Add typed settings and a `FilterSettings` / `FilterKind` variant in `src/config.rs`,
+1. Add typed settings and a `FilterSettings` / `FilterKind` variant in `src/config/filters.rs`,
    including its label and defaults in `FilterKind::ALL`.
 2. Implement `AudioFilter` (`configure` and in-place `process`, mono 48 kHz) and
    register construction in `src/dsp/filter.rs`. Processor state belongs to each

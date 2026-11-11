@@ -1,6 +1,7 @@
 use super::compressor::Compressor;
 use super::expander::Expander;
 use super::highpass::HighPass;
+use super::math::db_to_lin;
 use super::noise_suppression::NoiseSuppressor;
 use crate::config::FilterSettings;
 
@@ -112,7 +113,7 @@ impl AudioFilter for Gain {
     fn process(&mut self, samples: &mut [f32]) {
         // Preserve the original master gain's unity bypass and clipping behavior.
         if self.db.abs() > 0.01 {
-            let gain = 10.0f32.powf(self.db * 0.05);
+            let gain = db_to_lin(self.db);
             for sample in samples {
                 *sample = (*sample * gain).clamp(-1.0, 1.0);
             }
