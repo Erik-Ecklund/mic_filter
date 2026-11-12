@@ -6,10 +6,12 @@ use serde::{Deserialize, Serialize};
 mod filters;
 mod legacy;
 mod live;
+mod profiles;
 
 pub use filters::*;
 use legacy::StoredConfig;
 pub use live::LiveParams;
+pub use profiles::{Profile, ProfileDocument};
 
 const APP_DIR: &str = "mic-processor";
 const CONFIG_NAME: &str = "config.toml";
@@ -21,6 +23,8 @@ pub struct AppConfig {
     pub output_device: Option<String>,
     pub monitor_device: Option<String>,
     pub filters: Vec<FilterConfig>,
+    pub limiter: LimiterConfig,
+    pub profiles: Vec<Profile>,
     pub monitor_enabled: bool,
     pub monitor_gain_db: f32,
     pub start_processing: bool,

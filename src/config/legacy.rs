@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::{AppConfig, filters::*};
+use super::{AppConfig, Profile, filters::*};
 
 /// Read both the original singleton settings and the new ordered list.
 #[derive(Debug, Clone, Deserialize)]
@@ -21,6 +21,8 @@ pub(super) struct StoredConfig {
     pub start_processing: bool,
     pub start_minimized: bool,
     pub filters: Option<Vec<FilterConfig>>,
+    pub limiter: LimiterConfig,
+    pub profiles: Vec<Profile>,
 }
 
 impl Default for StoredConfig {
@@ -40,6 +42,8 @@ impl Default for StoredConfig {
             start_processing: true,
             start_minimized: false,
             filters: None,
+            limiter: LimiterConfig::default(),
+            profiles: Vec::new(),
         }
     }
 }
@@ -77,6 +81,8 @@ impl From<StoredConfig> for AppConfig {
             output_device: old.output_device,
             monitor_device: old.monitor_device,
             filters,
+            limiter: old.limiter,
+            profiles: old.profiles,
             monitor_enabled: old.monitor_enabled,
             monitor_gain_db: old.monitor_gain_db,
             start_processing: old.start_processing,
@@ -84,19 +90,33 @@ impl From<StoredConfig> for AppConfig {
         };
         // Hand-edited configs may omit IDs or repeat them. Give every instance
         // a unique identity so processor state cannot be shared accidentally.
-        let mut used = std::collections::HashSet::new();
-        let mut next = cfg.filters.iter().map(|f| f.id).max().unwrap_or(0);
-        for filter in &mut cfg.filters {
-            if filter.id == 0 || !used.insert(filter.id) {
-                loop {
-                    next = next.wrapping_add(1);
-                    if next != 0 && used.insert(next) {
-                        filter.id = next;
-                        break;
-                    }
+        normalize_filter_ids(&mut cfg.filters);
+        let mut names = std::collections::HashSet::new();
+        cfg.profiles.retain_mut(|profile| {
+            profile.name = profile.name.trim().to_owned();
+            if profile.validate().is_err() || !names.insert(profile.name.to_lowercase()) {
+                tracing::warn!("ignoring invalid or duplicate named profile");
+                return false;
+            }
+            normalize_filter_ids(&mut profile.filters);
+            true
+        });
+        cfg
+    }
+}
+
+pub(super) fn normalize_filter_ids(filters: &mut [FilterConfig]) {
+    let mut used = std::collections::HashSet::new();
+    let mut next = filters.iter().map(|f| f.id).max().unwrap_or(0);
+    for filter in filters {
+        if filter.id == 0 || !used.insert(filter.id) {
+            loop {
+                next = next.wrapping_add(1);
+                if next != 0 && used.insert(next) {
+                    filter.id = next;
+                    break;
                 }
             }
         }
-        cfg
     }
 }

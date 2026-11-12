@@ -250,4 +250,40 @@ impl AppState {
                     );
             });
     }
+
+    pub(super) fn limiter_panel(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.strong("Final-stage peak limiter");
+            ui.label("Always after the filter chain, before mute. Disabled by default.");
+            let before = self.config.limiter.clone();
+            let limiter = &mut self.config.limiter;
+            ui.checkbox(&mut limiter.enabled, "Enable sample-peak limiter");
+            ui.add(egui::Slider::new(&mut limiter.ceiling_db, -24.0..=0.0).text("Ceiling dBFS"));
+            ui.add(egui::Slider::new(&mut limiter.release_ms, 10.0..=1000.0).text("Release ms"));
+            if *limiter != before {
+                self.params.publish_chain(&self.config.filters, limiter);
+            }
+            let reduction = if self.engine.is_running() && limiter.enabled {
+                self.params.limiter_reduction_db.load(Ordering::Relaxed)
+            } else {
+                0.0
+            };
+            ui.label(format!("Live gain reduction: {reduction:.1} dB"));
+            ui.add(egui::ProgressBar::new((reduction / 24.0).clamp(0.0, 1.0)));
+            if self.params.tuning.snapshot().playing {
+                let replay_reduction = if limiter.enabled {
+                    self.params
+                        .replay_limiter_reduction_db
+                        .load(Ordering::Relaxed)
+                } else {
+                    0.0
+                };
+                ui.label(format!("Replay gain reduction: {replay_reduction:.1} dB"));
+            }
+            ui.small(
+                "Instant attack, no added buffering. Not true-peak limiting; cannot repair \
+                upstream clipping or protect against later resampling / monitor-volume boosts.",
+            );
+        });
+    }
 }

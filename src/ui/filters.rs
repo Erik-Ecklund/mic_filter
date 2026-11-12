@@ -91,7 +91,7 @@ pub(super) fn filter_chain_ui(
         None => {}
     }
     if filters.is_empty() {
-        ui.weak("No filters: unprocessed audio passes through (mute still applies).");
+        ui.weak("No configurable filters: final limiter and mute still apply.");
     }
     ui.menu_button("Add filter", |ui| {
         for kind in FilterKind::ALL {

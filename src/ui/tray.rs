@@ -1,6 +1,6 @@
 use super::AppState;
 use eframe::egui;
-use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 pub(crate) struct TrayController {
@@ -11,6 +11,8 @@ pub(crate) struct TrayController {
     mute: MenuId,
     monitor: MenuId,
     quit: MenuId,
+    profiles: Submenu,
+    profile_items: Vec<(MenuItem, String)>,
 }
 
 impl TrayController {
@@ -22,6 +24,7 @@ impl TrayController {
         let mute = MenuItem::new("Toggle mute", true, None);
         let monitor = MenuItem::new("Toggle mic test", true, None);
         let quit = MenuItem::new("Quit", true, None);
+        let profiles = Submenu::new("Profiles (replaces current settings)", false);
         let _ = menu.append_items(&[
             &show,
             &PredefinedMenuItem::separator(),
@@ -29,6 +32,7 @@ impl TrayController {
             &stop,
             &mute,
             &monitor,
+            &profiles,
             &PredefinedMenuItem::separator(),
             &quit,
         ]);
@@ -48,10 +52,35 @@ impl TrayController {
             mute: mute.id().clone(),
             monitor: monitor.id().clone(),
             quit: quit.id().clone(),
+            profiles,
+            profile_items: Vec::new(),
         }
     }
 
-    pub(crate) fn process_events(&self, state: &mut AppState, ctx: &egui::Context) {
+    fn sync_profiles(&mut self, state: &AppState) {
+        if self.profile_items.iter().map(|(_, name)| name).eq(state
+            .config
+            .profiles
+            .iter()
+            .map(|profile| &profile.name))
+        {
+            return;
+        }
+        for (item, _) in self.profile_items.drain(..) {
+            let _ = self.profiles.remove(&item);
+        }
+        for profile in &state.config.profiles {
+            // Native menu labels interpret '&' as a mnemonic.
+            let item = MenuItem::new(profile.name.replace('&', "&&"), true, None);
+            if self.profiles.append(&item).is_ok() {
+                self.profile_items.push((item, profile.name.clone()));
+            }
+        }
+        self.profiles.set_enabled(!self.profile_items.is_empty());
+    }
+
+    pub(crate) fn process_events(&mut self, state: &mut AppState, ctx: &egui::Context) {
+        self.sync_profiles(state);
         while let Ok(event) = MenuEvent::receiver().try_recv() {
             if event.id == self.show {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
@@ -67,6 +96,12 @@ impl TrayController {
             } else if event.id == self.quit {
                 state.quit_requested = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            } else if let Some((_, name)) = self
+                .profile_items
+                .iter()
+                .find(|(item, _)| event.id == *item.id())
+            {
+                state.switch_profile(name);
             }
         }
     }

@@ -3,6 +3,7 @@ mod compressor;
 mod expander;
 mod filter;
 mod highpass;
+mod limiter;
 pub(crate) mod math;
 mod noise_suppression;
 

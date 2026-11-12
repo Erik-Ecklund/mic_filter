@@ -1,6 +1,24 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LimiterConfig {
+    pub enabled: bool,
+    pub ceiling_db: f32,
+    pub release_ms: f32,
+}
+
+impl Default for LimiterConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            ceiling_db: -1.0,
+            release_ms: 100.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FilterConfig {
     #[serde(default)]
     pub id: u64,

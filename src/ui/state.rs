@@ -15,6 +15,7 @@ pub struct AppState {
     pub status_message: String,
     pub quit_requested: bool,
     pub(super) next_filter_id: u64,
+    pub(super) profile_ui: super::profiles::ProfileUi,
 }
 
 impl AppState {
@@ -43,6 +44,7 @@ impl AppState {
             status_message: String::new(),
             quit_requested: false,
             next_filter_id,
+            profile_ui: super::profiles::ProfileUi::default(),
         }
     }
 

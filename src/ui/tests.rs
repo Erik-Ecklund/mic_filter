@@ -5,7 +5,7 @@ use super::*;
 use crate::audio::{AudioEngine, LevelMeters};
 use crate::config::{AppConfig, LiveParams};
 
-fn app(config: AppConfig) -> MicProcessorApp {
+pub(super) fn app(config: AppConfig) -> MicProcessorApp {
     let params = LiveParams::from_config(&config);
     let meters = LevelMeters::new();
     MicProcessorApp {
@@ -19,6 +19,7 @@ fn app(config: AppConfig) -> MicProcessorApp {
             status_message: String::new(),
             quit_requested: false,
             next_filter_id: 10,
+            profile_ui: super::profiles::ProfileUi::default(),
         },
     }
 }
@@ -78,4 +79,39 @@ fn tuning_panel_renders_recording_state_without_persisting_clip_settings() {
     assert_eq!(app.state.config, before);
     app.state.engine.stop();
     assert!(!app.state.params.tuning.snapshot().recording);
+}
+
+#[test]
+fn profile_load_publishes_limiter_and_filters_without_touching_global_state() {
+    let mut config = AppConfig {
+        input_device: Some("Mic".into()),
+        monitor_gain_db: -15.0,
+        ..AppConfig::default()
+    };
+    config.limiter.enabled = true;
+    config.limiter.ceiling_db = -3.0;
+    config.save_new_profile("Meetings").unwrap();
+    config.filters.clear();
+    config.limiter.enabled = false;
+    let mut app = app(config);
+    app.state.params.tuning.record();
+    app.state.params.muted.store(true, Ordering::Relaxed);
+    app.state.load_named_profile("Meetings").unwrap();
+    let live = app.state.params.chain.lock().clone();
+    assert_eq!(live.filters, app.state.config.filters);
+    assert_eq!(live.limiter, app.state.config.limiter);
+    assert!(live.limiter.enabled);
+    assert_eq!(app.state.config.input_device.as_deref(), Some("Mic"));
+    assert_eq!(
+        app.state.params.monitor_gain_db.load(Ordering::Relaxed),
+        -15.0
+    );
+    assert!(app.state.params.muted.load(Ordering::Relaxed));
+    assert!(app.state.params.tuning.snapshot().recording);
+    let before = app.state.config.clone();
+    assert!(app.state.load_named_profile("Missing").is_err());
+    assert_eq!(app.state.config, before);
+    let ctx = egui::Context::default();
+    let _ = ctx.run(egui::RawInput::default(), |ctx| app.show(ctx));
+    assert_eq!(app.state.config, before);
 }

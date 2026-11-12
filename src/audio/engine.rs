@@ -249,6 +249,12 @@ impl AudioEngine {
             }
         }
         self.params.tuning.stop();
+        self.params
+            .limiter_reduction_db
+            .store(0.0, Ordering::Relaxed);
+        self.params
+            .replay_limiter_reduction_db
+            .store(0.0, Ordering::Relaxed);
         self.params.running.store(false, Ordering::Relaxed);
     }
 }

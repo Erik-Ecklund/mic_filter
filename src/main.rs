@@ -20,7 +20,7 @@ fn main() -> eframe::Result<()> {
     let params = LiveParams::from_config(&config);
     let meters = LevelMeters::new();
     let engine = Rc::new(AudioEngine::new(params.clone(), meters.clone()));
-    let tray = TrayController::new();
+    let mut tray = TrayController::new();
 
     let mut state = AppState::new(config.clone(), params.clone(), engine.clone(), meters);
 

@@ -4,6 +4,7 @@ use eframe::egui;
 mod devices;
 mod filters;
 mod panels;
+mod profiles;
 mod state;
 mod tray;
 mod tuning;
@@ -33,9 +34,11 @@ impl MicProcessorApp {
                 self.state.monitor_panel(ui);
                 self.state.tuning_panel(ui);
                 self.state.devices_panel(ui);
+                self.state.profiles_panel(ui);
                 if filters::filter_chain_ui(ui, &mut self.state.config.filters, &mut self.state.next_filter_id) {
                     self.state.params.publish_filters(&self.state.config.filters);
                 }
+                self.state.limiter_panel(ui);
                 self.state.startup_panel(ui);
                 ui.separator();
                 ui.small("Tip: Install VB-Cable, set this app's output to \"CABLE Input\", and set apps \

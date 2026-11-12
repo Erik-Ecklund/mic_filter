@@ -18,10 +18,14 @@ fn live_params_mirror_config_and_snapshot() {
     cfg.filters.pop();
     live.publish_filters(&cfg.filters);
     live.monitor_gain_db.store(-1.25, Ordering::Relaxed);
+    cfg.limiter.enabled = true;
+    cfg.limiter.ceiling_db = -4.0;
+    live.publish_chain(&cfg.filters, &cfg.limiter);
     let mut out = AppConfig::default();
     live.snapshot_into(&mut out);
     assert_eq!(out.filters, cfg.filters);
     assert_eq!(out.monitor_gain_db, -1.25);
+    assert_eq!(out.limiter, cfg.limiter);
 }
 
 #[test]

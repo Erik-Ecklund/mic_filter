@@ -182,7 +182,7 @@ pub(super) fn process_loop(
                 .tuning
                 .process(&dry, &work, &mut monitor_work, |samples, reset| {
                     if reset || replay_chain.is_none() {
-                        replay_chain = Some(DspChain::new(params.clone()));
+                        replay_chain = Some(DspChain::new_replay(params.clone()));
                     }
                     if let Some(chain) = &mut replay_chain {
                         chain.process(samples);

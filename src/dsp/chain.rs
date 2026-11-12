@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use super::filter::{AudioFilter, create_filter};
-use crate::config::{FilterConfig, LiveParams};
+use super::limiter::Limiter;
+use crate::config::{FilterConfig, LimiterConfig, LiveParams};
 
 struct FilterInstance {
     config: FilterConfig,
@@ -13,16 +14,32 @@ struct FilterInstance {
 pub struct DspChain {
     params: Arc<LiveParams>,
     filters: Vec<FilterInstance>,
+    limiter_config: LimiterConfig,
+    limiter: Limiter,
+    replay: bool,
+    generation: u64,
 }
 
 impl DspChain {
     pub fn new(params: Arc<LiveParams>) -> Self {
-        let config = params.filters.lock().clone();
+        Self::with_role(params, false)
+    }
+
+    pub fn new_replay(params: Arc<LiveParams>) -> Self {
+        Self::with_role(params, true)
+    }
+
+    fn with_role(params: Arc<LiveParams>, replay: bool) -> Self {
+        let config = params.chain.lock().clone();
         let mut chain = Self {
             params,
             filters: Vec::new(),
+            limiter: Limiter::new(&config.limiter),
+            limiter_config: config.limiter,
+            replay,
+            generation: config.generation,
         };
-        chain.reconcile(config);
+        chain.reconcile(config.filters);
         chain
     }
 
@@ -57,9 +74,12 @@ impl DspChain {
     pub fn process(&mut self, samples: &mut [f32]) {
         // Never wait for the UI. If it is publishing, keep the current chain
         // for this block and pick up the latest complete snapshot next time.
-        let update = self.params.filters.try_lock().and_then(|config| {
-            let unchanged = config.len() == self.filters.len()
+        let update = self.params.chain.try_lock().and_then(|config| {
+            let unchanged = config.generation == self.generation
+                && config.limiter == self.limiter_config
+                && config.filters.len() == self.filters.len()
                 && config
+                    .filters
                     .iter()
                     .zip(&self.filters)
                     .all(|(a, b)| *a == b.config);
@@ -67,14 +87,27 @@ impl DspChain {
         });
         // Release the settings lock before constructing/configuring processors.
         if let Some(config) = update {
-            self.reconcile(config);
+            if config.generation != self.generation {
+                self.filters.clear();
+                self.limiter = Limiter::new(&config.limiter);
+                self.generation = config.generation;
+            }
+            self.limiter.configure(&config.limiter);
+            self.limiter_config = config.limiter;
+            self.reconcile(config.filters);
         }
-
         for filter in &mut self.filters {
             if filter.config.settings.enabled() {
                 filter.processor.process(samples);
             }
         }
+        let reduction = self.limiter.process(samples);
+        let meter = if self.replay {
+            &self.params.replay_limiter_reduction_db
+        } else {
+            &self.params.limiter_reduction_db
+        };
+        meter.store(reduction, Ordering::Relaxed);
         if self.params.muted.load(Ordering::Relaxed) {
             samples.fill(0.0);
         }
@@ -85,6 +118,108 @@ impl DspChain {
 mod tests {
     use super::*;
     use crate::config::{AppConfig, FilterKind, FilterSettings, GainConfig, HighPassConfig};
+
+    #[test]
+    fn limiter_runs_after_gain_and_live_ceiling_changes_apply() {
+        let params = params(vec![gain(1, 6.0)]);
+        let mut limiter = LimiterConfig {
+            enabled: true,
+            ceiling_db: -12.0,
+            release_ms: 100.0,
+        };
+        params.publish_chain(&[gain(1, 6.0)], &limiter);
+        let mut chain = DspChain::new(params.clone());
+        let mut samples = [0.25; 480];
+        chain.process(&mut samples);
+        let ceiling = super::super::math::db_to_lin(-12.0);
+        assert!(samples.iter().all(|s| s.abs() <= ceiling));
+        assert!((samples[0] - ceiling).abs() < 1e-6);
+        assert!(params.limiter_reduction_db.load(Ordering::Relaxed) > 5.0);
+        limiter.ceiling_db = -18.0;
+        params.publish_chain(&[gain(1, 6.0)], &limiter);
+        samples.fill(0.25);
+        chain.process(&mut samples);
+        assert!(
+            samples
+                .iter()
+                .all(|s| s.abs() <= super::super::math::db_to_lin(-18.0))
+        );
+        params.muted.store(true, Ordering::Relaxed);
+        chain.process(&mut samples);
+        assert_eq!(samples, [0.0; 480]);
+    }
+
+    #[test]
+    fn replay_has_independent_limiter_envelope_and_meter() {
+        let params = params(vec![]);
+        params.publish_chain(
+            &[],
+            &LimiterConfig {
+                enabled: true,
+                ceiling_db: -6.0,
+                release_ms: 100.0,
+            },
+        );
+        let mut live = DspChain::new(params.clone());
+        let mut replay = DspChain::new_replay(params.clone());
+        live.process(&mut [4.0; 480]);
+        let live_reduction = params.limiter_reduction_db.load(Ordering::Relaxed);
+        let mut quiet = [0.1; 480];
+        replay.process(&mut quiet);
+        assert_eq!(quiet, [0.1; 480]);
+        assert_eq!(
+            params.replay_limiter_reduction_db.load(Ordering::Relaxed),
+            0.0
+        );
+        assert_eq!(
+            params.limiter_reduction_db.load(Ordering::Relaxed),
+            live_reduction
+        );
+        assert!(live_reduction > 10.0);
+    }
+
+    #[test]
+    fn loading_even_an_identical_empty_profile_resets_limiter_state() {
+        let params = params(vec![]);
+        let limiter = LimiterConfig {
+            enabled: true,
+            ..LimiterConfig::default()
+        };
+        params.publish_chain(&[], &limiter);
+        let mut chain = DspChain::new(params.clone());
+        chain.process(&mut [10.0; 480]);
+        let mut quiet = [0.1; 480];
+        chain.process(&mut quiet);
+        assert!(quiet[0] < 0.1);
+        params.publish_profile(&[], &limiter);
+        quiet.fill(0.1);
+        chain.process(&mut quiet);
+        assert_eq!(quiet, [0.1; 480]);
+    }
+
+    #[test]
+    fn contended_profile_snapshot_keeps_old_chain_and_limiter_together() {
+        let params = params(vec![]);
+        let mut chain = DspChain::new(params.clone());
+        let mut guard = params.chain.lock();
+        guard.filters = vec![gain(1, 20.0)];
+        guard.limiter = LimiterConfig {
+            enabled: true,
+            ceiling_db: -20.0,
+            release_ms: 100.0,
+        };
+        let mut samples = [0.5; 480];
+        chain.process(&mut samples);
+        assert_eq!(samples, [0.5; 480]);
+        drop(guard);
+        samples.fill(0.5);
+        chain.process(&mut samples);
+        assert!(
+            samples
+                .iter()
+                .all(|s| s.abs() <= super::super::math::db_to_lin(-20.0))
+        );
+    }
 
     fn gain(id: u64, db: f32) -> FilterConfig {
         FilterConfig::new(
@@ -171,8 +306,8 @@ mod tests {
     fn busy_publisher_does_not_block_processing() {
         let params = params(vec![gain(1, -20.0)]);
         let mut chain = DspChain::new(params.clone());
-        let mut guard = params.filters.lock();
-        guard.clear();
+        let mut guard = params.chain.lock();
+        guard.filters.clear();
         let mut buf = [0.5; 480];
         chain.process(&mut buf);
         assert!((buf[0] - 0.05).abs() < 1e-5);
