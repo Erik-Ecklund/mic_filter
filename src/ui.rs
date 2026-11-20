@@ -3,6 +3,7 @@ use eframe::egui;
 
 mod devices;
 mod filters;
+mod graphic_eq;
 mod panels;
 mod profiles;
 mod state;

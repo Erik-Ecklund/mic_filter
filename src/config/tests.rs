@@ -2,6 +2,59 @@ use super::*;
 use std::sync::atomic::Ordering;
 
 #[test]
+fn graphic_eq_defaults_and_flat_reset_preserve_bypass() {
+    let filter: FilterConfig = toml::from_str("type = 'graphic_eq'").unwrap();
+    assert_eq!(
+        filter.settings,
+        FilterSettings::GraphicEq(GraphicEqConfig::default())
+    );
+    let mut config = GraphicEqConfig {
+        enabled: false,
+        preamp_db: -9.0,
+        gains_db: [6.0; 10],
+    };
+    config.reset_flat();
+    assert!(!config.enabled);
+    assert_eq!(config.preamp_db, 0.0);
+    assert_eq!(config.gains_db, [0.0; 10]);
+    assert_eq!(AppConfig::default().filters.len(), 5);
+}
+
+#[test]
+fn every_available_filter_roundtrips_and_supports_bypass() {
+    for (index, kind) in FilterKind::ALL.into_iter().enumerate() {
+        let mut filter = FilterConfig::new(index as u64 + 1, kind.default_settings());
+        assert_eq!(filter.settings.kind(), kind);
+        assert!(filter.settings.enabled());
+        *filter.settings.enabled_mut() = false;
+        assert!(!filter.settings.enabled());
+        let text = toml::to_string_pretty(&filter).unwrap();
+        let back: FilterConfig = toml::from_str(&text).unwrap();
+        assert_eq!(back, filter);
+    }
+}
+
+#[test]
+fn minimal_eq_and_de_esser_settings_have_defaults_without_changing_old_chain() {
+    let eq: FilterConfig = toml::from_str("type = 'parametric_eq'").unwrap();
+    assert_eq!(
+        eq.settings,
+        FilterSettings::ParametricEq(ParametricEqConfig::default())
+    );
+    let de_esser: FilterConfig = toml::from_str("type = 'de_esser'").unwrap();
+    assert_eq!(
+        de_esser.settings,
+        FilterSettings::DeEsser(DeEsserConfig::default())
+    );
+    let old: AppConfig = toml::from_str("").unwrap();
+    assert_eq!(old.filters.len(), 5);
+    assert!(!old.filters.iter().any(|filter| matches!(
+        filter.settings,
+        FilterSettings::ParametricEq(_) | FilterSettings::DeEsser(_)
+    )));
+}
+
+#[test]
 fn default_config_roundtrips_through_toml() {
     let cfg = AppConfig::default();
     let text = toml::to_string_pretty(&cfg).expect("serialize");
@@ -56,7 +109,7 @@ makeup_db = 9.0
             .iter()
             .map(|f| f.settings.kind())
             .collect::<Vec<_>>(),
-        FilterKind::ALL
+        FilterKind::DEFAULT_CHAIN
     );
     assert_eq!(
         cfg.filters[0].settings,

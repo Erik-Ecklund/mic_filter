@@ -1,8 +1,11 @@
 use super::compressor::Compressor;
+use super::de_esser::DeEsser;
 use super::expander::Expander;
+use super::graphic_eq::GraphicEq;
 use super::highpass::HighPass;
 use super::math::db_to_lin;
 use super::noise_suppression::NoiseSuppressor;
+use super::parametric_eq::ParametricEq;
 use crate::config::FilterSettings;
 
 const PROCESS_SR: f32 = 48_000.0;
@@ -13,6 +16,42 @@ pub trait AudioFilter {
     /// Called on construction and when this instance's settings change.
     fn configure(&mut self, settings: &FilterSettings);
     fn process(&mut self, samples: &mut [f32]);
+}
+
+impl AudioFilter for ParametricEq {
+    fn configure(&mut self, settings: &FilterSettings) {
+        if let FilterSettings::ParametricEq(config) = settings {
+            ParametricEq::configure(self, config);
+        }
+    }
+
+    fn process(&mut self, samples: &mut [f32]) {
+        self.process_block(samples);
+    }
+}
+
+impl AudioFilter for DeEsser {
+    fn configure(&mut self, settings: &FilterSettings) {
+        if let FilterSettings::DeEsser(config) = settings {
+            DeEsser::configure(self, config);
+        }
+    }
+
+    fn process(&mut self, samples: &mut [f32]) {
+        self.process_block(samples);
+    }
+}
+
+impl AudioFilter for GraphicEq {
+    fn configure(&mut self, settings: &FilterSettings) {
+        if let FilterSettings::GraphicEq(config) = settings {
+            GraphicEq::configure(self, config);
+        }
+    }
+
+    fn process(&mut self, samples: &mut [f32]) {
+        self.process_block(samples);
+    }
 }
 
 /// The only place where the chain needs to know the built-in processor types.
@@ -26,6 +65,9 @@ pub fn create_filter(settings: &FilterSettings) -> Box<dyn AudioFilter> {
         FilterSettings::Expander(_) => Box::new(Expander::new(PROCESS_SR)),
         FilterSettings::Compressor(_) => Box::new(Compressor::new(PROCESS_SR)),
         FilterSettings::Gain(_) => Box::new(Gain { db: 0.0 }),
+        FilterSettings::ParametricEq(c) => Box::new(ParametricEq::new(c)),
+        FilterSettings::GraphicEq(c) => Box::new(GraphicEq::new(c)),
+        FilterSettings::DeEsser(c) => Box::new(DeEsser::new(c)),
     };
     filter.configure(settings);
     filter

@@ -30,6 +30,70 @@ instances retain their state when reordered or adjusted. Click **Save** to persi
 the chain. Mute always runs after the entire chain; monitor volume is separate.
 Changes are not crossfaded, so abrupt gain/order/profile changes can be audible.
 
+### Parametric EQ
+
+Choose **Add filter → Parametric EQ** for three independent bell-shaped bands.
+Each band has:
+
+- **Frequency**: 20–20,000 Hz, with a logarithmic slider.
+- **Gain**: −18 to +18 dB; 0 dB is flat.
+- **Q**: 0.1–12; lower values affect a broader range, higher values a narrower range.
+- Its own **Enabled** checkbox, in addition to the whole filter's bypass.
+
+Band centers initially sit at 150 Hz, 1 kHz, and 5 kHz, all at 0 dB with Q = 1,
+so adding an EQ initially leaves your audio unchanged. Try a modest low-mid cut
+to reduce muddiness or a gentle upper-mid boost for clarity. Boosting multiple
+bands can exceed full scale; leave headroom and consider enabling the final limiter.
+The EQ does not hard-clip its output.
+
+### Graphic EQ
+
+Choose **Add filter → Graphic EQ** for ten vertical gain faders at **31.5, 63,
+125, 250, 500 Hz, 1, 2, 4, 8, and 16 kHz**. Each fader adjusts −12 to +12 dB;
+drag or type the numeric value below it for precise adjustment. Scroll
+horizontally when the window is too narrow to show all bands.
+
+- **Preamp**: −24 to +12 dB, applied before the bands without hard clipping.
+  Use negative trim to leave headroom for boosts.
+- **Flat**: resets every fader and preamp to 0 dB without changing filter bypass.
+- Bands use overlapping, fixed-Q bell filters (Q ≈ 1.414). Adjusting neighboring
+  faders combines their responses; this is not an ideal brick-wall filter bank.
+
+New instances start flat and do not change the signal. The graphic EQ supports
+live edits, drag-reordering, independent instances, profile import/export, and
+processed headphone replay. It is not added to default or existing chains.
+There is no added buffering, lookahead, or automatic gain compensation. Boosts
+can exceed full scale; use preamp trim and consider the final limiter.
+
+### De-esser
+
+Choose **Add filter → De-esser** to soften harsh "s" / "sh" sounds. It detects a
+band-pass signal and subtracts only that band's attenuated portion from the dry
+audio, rather than compressing the whole voice.
+
+| Control | Range | Initial value |
+|---------|-------|---------------|
+| Center | 2–12 kHz | 6 kHz |
+| Q | 0.5–8 | 2 |
+| Threshold | −60–0 dBFS | −24 dBFS |
+| Ratio | 1–20 | 4 |
+| Attack | 0.1–20 ms | 2 ms |
+| Release | 10–300 ms | 80 ms |
+| Maximum reduction | 0–18 dB | 9 dB |
+
+The threshold refers to the detected band's smoothed envelope, not the full
+microphone level. Lower it until sibilants soften; raise it if speech becomes
+dull. Higher Q narrows the affected band. Maximum reduction bounds attenuation
+at the band center; ratio 1 or maximum reduction 0 gives unattenuated audio.
+Attack/release smooth both the detector and attenuation; there is no lookahead,
+so the beginning of a fast transient may pass before reduction engages.
+
+Try placing EQ before the compressor, and the de-esser after EQ/compression if
+they emphasize sibilance. Use record-and-replay with headphones to tune against
+the same speech. Both filters run at 48 kHz without adding buffering, support
+multiple independent instances, retain state during edits/reordering, and are
+included in saved chains and profiles. Neither is added to default/legacy chains.
+
 ### Final-stage peak limiter
 
 Enable **Final-stage peak limiter** below the filter chain to contain sample
@@ -166,8 +230,11 @@ Persisted to:
 | `limiter` | Final-stage `enabled`, `ceiling_db`, and `release_ms` |
 | `profiles` | Named snapshots containing `name`, `filters`, and `limiter` |
 | `filters[].id` | Stable instance identity (assigned automatically if omitted) |
-| `filters[].type` | `high_pass`, `rnnoise`, `expander`, `compressor`, or `gain` |
+| `filters[].type` | `high_pass`, `rnnoise`, `expander`, `compressor`, `gain`, `parametric_eq`, `graphic_eq`, or `de_esser` |
 | `filters[].enabled` | Bypass toggle for this instance |
+| `parametric_eq` fields | Exactly three `bands`, each with `enabled`, `frequency_hz`, `gain_db`, and `q` |
+| `graphic_eq` fields | `preamp_db` and exactly ten `gains_db` values in ascending band-frequency order |
+| `de_esser` fields | `frequency_hz`, `q`, `threshold_db`, `ratio`, `attack_ms`, `release_ms`, and `max_reduction_db` |
 | Other filter fields | `cutoff_hz`, `gain_db`, or dynamics parameters as appropriate |
 | `start_processing` | Auto-start engine on launch |
 
@@ -214,6 +281,7 @@ src/
     tuning.rs      # dry recording and headphone replay controls
     devices.rs     # reusable device selectors
     filters.rs     # ordered filter editor
+    graphic_eq.rs  # ten-band vertical faders, preamp, and flat reset
     widgets.rs     # meters and atomic sliders
     tray.rs        # tray ownership, events, and icon
     tests.rs       # hardware-independent UI smoke tests
@@ -233,6 +301,10 @@ src/
     meters.rs      # shared peak meters
     tuning.rs      # bounded in-memory recording and monitor-only looping
   dsp/             # processors, common math, filter factory, ordered chain
+    biquad.rs      # stable bell/band-pass building block
+    parametric_eq.rs # three independent parametric bell bands
+    graphic_eq.rs  # ten fixed-Q bands and preamp trim
+    de_esser.rs    # band-selective sibilance reduction
 plan.md
 ```
 

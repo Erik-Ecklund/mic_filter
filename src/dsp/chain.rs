@@ -120,6 +120,104 @@ mod tests {
     use crate::config::{AppConfig, FilterKind, FilterSettings, GainConfig, HighPassConfig};
 
     #[test]
+    fn new_filter_bypass_is_exact_and_limiter_still_runs_after_eq() {
+        let mut settings = FilterKind::ALL
+            .into_iter()
+            .filter(|kind| {
+                matches!(
+                    kind,
+                    FilterKind::ParametricEq | FilterKind::GraphicEq | FilterKind::DeEsser
+                )
+            })
+            .map(|kind| kind.default_settings())
+            .collect::<Vec<_>>();
+        for setting in &mut settings {
+            *setting.enabled_mut() = false;
+        }
+        let filters = settings
+            .into_iter()
+            .enumerate()
+            .map(|(i, setting)| FilterConfig::new(i as u64 + 1, setting))
+            .collect::<Vec<_>>();
+        let shared = params(filters.clone());
+        let mut chain = DspChain::new(shared.clone());
+        let mut samples = crate::dsp::test_support::tone(6000.0, 0.3, 480);
+        let original = samples.clone();
+        chain.process(&mut samples);
+        assert_eq!(samples, original);
+        let mut eq = crate::config::ParametricEqConfig::default();
+        eq.bands[0].frequency_hz = 6000.0;
+        eq.bands[0].gain_db = 18.0;
+        shared.publish_chain(
+            &[FilterConfig::new(3, FilterSettings::ParametricEq(eq))],
+            &LimiterConfig {
+                enabled: true,
+                ceiling_db: -6.0,
+                release_ms: 100.0,
+            },
+        );
+        for _ in 0..10 {
+            samples.copy_from_slice(&original);
+            chain.process(&mut samples);
+            assert!(
+                samples
+                    .iter()
+                    .all(|s| s.abs() <= super::super::math::db_to_lin(-6.0))
+            );
+        }
+    }
+
+    #[test]
+    fn eq_and_de_esser_keep_history_on_moves_and_parameter_edits() {
+        for kind in [
+            FilterKind::ParametricEq,
+            FilterKind::GraphicEq,
+            FilterKind::DeEsser,
+        ] {
+            let mut settings = kind.default_settings();
+            if let FilterSettings::ParametricEq(config) = &mut settings {
+                config.bands[0].gain_db = 9.0;
+            }
+            if let FilterSettings::GraphicEq(config) = &mut settings {
+                config.gains_db[5] = 9.0;
+            }
+            if let FilterSettings::DeEsser(config) = &mut settings {
+                config.threshold_db = -40.0;
+            }
+            let filter = FilterConfig::new(1, settings.clone());
+            let shared = params(vec![filter.clone(), gain(2, 0.0)]);
+            let reference_params = params(vec![filter]);
+            let mut chain = DspChain::new(shared.clone());
+            let mut reference = DspChain::new(reference_params.clone());
+            let original = crate::dsp::test_support::tone(6000.0, 0.3, 480);
+            for _ in 0..20 {
+                let mut a = original.clone();
+                let mut b = original.clone();
+                chain.process(&mut a);
+                reference.process(&mut b);
+                assert_eq!(a, b);
+            }
+            if let FilterSettings::ParametricEq(config) = &mut settings {
+                config.bands[0].frequency_hz = 2000.0;
+            }
+            if let FilterSettings::GraphicEq(config) = &mut settings {
+                config.gains_db[5] = 3.0;
+            }
+            if let FilterSettings::DeEsser(config) = &mut settings {
+                config.threshold_db = -30.0;
+            }
+            let edited = FilterConfig::new(1, settings);
+            shared.publish_filters(&[gain(2, 0.0), edited.clone()]);
+            reference_params.publish_filters(&[edited]);
+            let mut a = original.clone();
+            let mut b = original;
+            chain.process(&mut a);
+            reference.process(&mut b);
+            assert_eq!(a, b);
+        }
+    }
+
+    #[test]
     fn limiter_runs_after_gain_and_live_ceiling_changes_apply() {
         let params = params(vec![gain(1, 6.0)]);
         let mut limiter = LimiterConfig {
@@ -357,7 +455,7 @@ mod tests {
                 .iter()
                 .map(|f| f.settings.kind())
                 .collect::<Vec<_>>(),
-            FilterKind::ALL
+            FilterKind::DEFAULT_CHAIN
         );
         let mut chain = DspChain::new(LiveParams::from_config(&cfg));
         let mut hp = HighPass::new(48_000.0, 80.0);

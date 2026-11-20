@@ -1,3 +1,12 @@
+/// Clamp finite parameters, using a safe fallback for NaN and infinity.
+pub(super) fn finite_clamp(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(min, max)
+    } else {
+        fallback
+    }
+}
+
 /// Convert decibels to a linear amplitude multiplier.
 #[inline]
 pub(crate) fn db_to_lin(db: f32) -> f32 {

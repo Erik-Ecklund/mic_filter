@@ -2,6 +2,105 @@ use super::*;
 use crate::config::{FilterSettings, GainConfig};
 
 #[test]
+fn graphic_eq_profiles_preserve_every_band_and_preamp() {
+    use crate::config::GraphicEqConfig;
+    let eq = GraphicEqConfig {
+        enabled: false,
+        preamp_db: -6.0,
+        gains_db: [-12.0, -9.0, -6.0, -3.0, 0.0, 3.0, 6.0, 9.0, 12.0, 1.5],
+    };
+    let mut config = AppConfig {
+        filters: vec![FilterConfig::new(1, FilterSettings::GraphicEq(eq))],
+        ..AppConfig::default()
+    };
+    config.save_new_profile("Graphic voice").unwrap();
+    let text = ProfileDocument::export(&config.profiles[0]).unwrap();
+    let profile = ProfileDocument::parse(&text).unwrap();
+    assert_eq!(profile, config.profiles[0]);
+    let back: AppConfig = toml::from_str(&toml::to_string_pretty(&config).unwrap()).unwrap();
+    assert_eq!(back, config);
+}
+
+#[test]
+fn graphic_eq_imports_reject_wrong_band_count_and_invalid_gains() {
+    for fields in [
+        "preamp_db = nan",
+        "preamp_db = 13.0",
+        "preamp_db = -25.0",
+        "gains_db = [0.0]",
+        "gains_db = [nan, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+        "gains_db = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 13.0]",
+    ] {
+        let text = format!(
+            "version = 1\n[profile]\nname = 'Invalid graphic'\n\
+            [[profile.filters]]\ntype = 'graphic_eq'\n{fields}"
+        );
+        assert!(ProfileDocument::parse(&text).is_err(), "{fields}");
+    }
+}
+
+#[test]
+fn eq_and_de_esser_profiles_roundtrip_with_independent_bands_and_settings() {
+    use crate::config::{DeEsserConfig, ParametricEqConfig};
+    let mut eq = ParametricEqConfig::default();
+    eq.bands[0].gain_db = -3.0;
+    eq.bands[1].enabled = false;
+    eq.bands[2].frequency_hz = 7000.0;
+    eq.bands[2].q = 3.5;
+    let de_esser = DeEsserConfig {
+        threshold_db: -33.0,
+        ..DeEsserConfig::default()
+    };
+    let mut cfg = AppConfig {
+        filters: vec![
+            FilterConfig::new(1, FilterSettings::ParametricEq(eq)),
+            FilterConfig::new(2, FilterSettings::DeEsser(de_esser)),
+        ],
+        ..AppConfig::default()
+    };
+    cfg.save_new_profile("Voice").unwrap();
+    let profile =
+        ProfileDocument::parse(&ProfileDocument::export(&cfg.profiles[0]).unwrap()).unwrap();
+    assert_eq!(profile, cfg.profiles[0]);
+    let back: AppConfig = toml::from_str(&toml::to_string_pretty(&cfg).unwrap()).unwrap();
+    assert_eq!(back, cfg);
+}
+
+#[test]
+fn imports_reject_invalid_eq_bands_and_de_esser_parameters() {
+    for (field, value) in [
+        ("frequency_hz", "nan"),
+        ("q", "0.0"),
+        ("threshold_db", "-100.0"),
+        ("ratio", "0.5"),
+        ("attack_ms", "inf"),
+        ("release_ms", "-1.0"),
+        ("max_reduction_db", "99.0"),
+    ] {
+        let text = format!(
+            "version = 1\n[profile]\nname = 'Bad'\n\
+            [[profile.filters]]\ntype = 'de_esser'\n{field} = {value}"
+        );
+        assert!(ProfileDocument::parse(&text).is_err(), "{field}");
+    }
+    for (field, value) in [
+        ("frequency_hz", "24000.0"),
+        ("gain_db", "nan"),
+        ("q", "-1.0"),
+    ] {
+        let text = format!(
+            "version = 1\n[profile]\nname = 'Bad EQ'\n\
+            [[profile.filters]]\ntype = 'parametric_eq'\n\
+            bands = [{{{field} = {value}}}, {{}}, {{}}]"
+        );
+        assert!(ProfileDocument::parse(&text).is_err(), "{field}");
+    }
+    let too_few = "version = 1\n[profile]\nname = 'Bad EQ'\n\
+        [[profile.filters]]\ntype = 'parametric_eq'\nbands = [{}, {}]";
+    assert!(ProfileDocument::parse(too_few).is_err());
+}
+
+#[test]
 fn crud_preserves_snapshots_and_loads_chain_and_limiter_without_devices() {
     let mut cfg = AppConfig {
         input_device: Some("Physical mic".into()),

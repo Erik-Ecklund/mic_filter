@@ -58,6 +58,28 @@ impl Profile {
                 FilterSettings::HighPass(c) => check(c.cutoff_hz, 40.0, 200.0, "High-pass cutoff")?,
                 FilterSettings::Rnnoise(_) => {}
                 FilterSettings::Gain(c) => check(c.gain_db, -24.0, 24.0, "Gain")?,
+                FilterSettings::GraphicEq(c) => {
+                    check(c.preamp_db, -24.0, 12.0, "Graphic EQ preamp")?;
+                    for gain in c.gains_db {
+                        check(gain, -12.0, 12.0, "Graphic EQ band gain")?;
+                    }
+                }
+                FilterSettings::ParametricEq(c) => {
+                    for band in &c.bands {
+                        check(band.frequency_hz, 20.0, 20_000.0, "EQ frequency")?;
+                        check(band.gain_db, -18.0, 18.0, "EQ gain")?;
+                        check(band.q, 0.1, 12.0, "EQ Q")?;
+                    }
+                }
+                FilterSettings::DeEsser(c) => {
+                    check(c.frequency_hz, 2000.0, 12_000.0, "De-esser frequency")?;
+                    check(c.q, 0.5, 8.0, "De-esser Q")?;
+                    check(c.threshold_db, -60.0, 0.0, "De-esser threshold")?;
+                    check(c.ratio, 1.0, 20.0, "De-esser ratio")?;
+                    check(c.attack_ms, 0.1, 20.0, "De-esser attack")?;
+                    check(c.release_ms, 10.0, 300.0, "De-esser release")?;
+                    check(c.max_reduction_db, 0.0, 18.0, "De-esser maximum reduction")?;
+                }
                 FilterSettings::Expander(c) => {
                     check(c.threshold_db, -80.0, 0.0, "Expander threshold")?;
                     check(c.ratio, 1.0, 10.0, "Expander ratio")?;

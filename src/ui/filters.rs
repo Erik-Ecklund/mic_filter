@@ -357,6 +357,96 @@ fn filter_settings_ui(ui: &mut egui::Ui, settings: &mut FilterSettings) {
                 "Non-unity gain clips to digital full scale. Monitor volume is independent.",
             );
         }
+        FilterSettings::ParametricEq(c) => {
+            ui.weak("Three bell bands for reducing muddiness or adding clarity.");
+            ui.small("Higher Q narrows the band. Boosts need headroom; consider enabling the final limiter.");
+            for (index, band) in c.bands.iter_mut().enumerate() {
+                ui.push_id(index, |ui| {
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.strong(format!("Band {}", index + 1));
+                            ui.checkbox(&mut band.enabled, "Enabled");
+                        });
+                        ui.add(
+                            egui::Slider::new(&mut band.frequency_hz, 20.0..=20_000.0)
+                                .logarithmic(true)
+                                .text("Frequency Hz"),
+                        )
+                        .on_hover_text("Center of this bell-shaped boost or cut.");
+                        slider(
+                            ui,
+                            &mut band.gain_db,
+                            -18.0..=18.0,
+                            "Gain dB",
+                            "0 dB is flat. Negative values cut; positive values boost.",
+                        );
+                        slider(
+                            ui,
+                            &mut band.q,
+                            0.1..=12.0,
+                            "Q",
+                            "Low Q is broad; high Q is narrow. Each band is independent.",
+                        );
+                    });
+                });
+            }
+        }
+        FilterSettings::GraphicEq(c) => super::graphic_eq::graphic_eq_ui(ui, c),
+        FilterSettings::DeEsser(c) => {
+            ui.weak("Reduce harsh sibilance by attenuating only the selected frequency band.");
+            ui.small(
+                "Start around 6 kHz; lower the threshold until harsh S sounds soften. \
+                Place after EQ/compression when they emphasize sibilance.",
+            );
+            ui.add(
+                egui::Slider::new(&mut c.frequency_hz, 2000.0..=12_000.0)
+                    .logarithmic(true)
+                    .text("Center Hz"),
+            )
+            .on_hover_text("Center of the detected and attenuated band, often 4–9 kHz.");
+            slider(
+                ui,
+                &mut c.q,
+                0.5..=8.0,
+                "Q",
+                "Lower Q covers a wider band; higher Q targets a narrower hiss.",
+            );
+            slider(
+                ui,
+                &mut c.threshold_db,
+                -60.0..=0.0,
+                "Threshold dBFS",
+                "Band envelope level that triggers de-essing; lower is more sensitive.",
+            );
+            slider(
+                ui,
+                &mut c.ratio,
+                1.0..=20.0,
+                "Ratio",
+                "1 is no reduction; higher values suppress more strongly above threshold.",
+            );
+            slider(
+                ui,
+                &mut c.attack_ms,
+                0.1..=20.0,
+                "Attack ms",
+                "Response time for sibilance detection and attenuation. No lookahead.",
+            );
+            slider(
+                ui,
+                &mut c.release_ms,
+                10.0..=300.0,
+                "Release ms",
+                "Recovery time after sibilance. Very short settings may sound rough.",
+            );
+            slider(
+                ui,
+                &mut c.max_reduction_db,
+                0.0..=18.0,
+                "Max reduction dB",
+                "Maximum attenuation at the band center. 0 is no reduction.",
+            );
+        }
     }
 }
 

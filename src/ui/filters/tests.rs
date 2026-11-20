@@ -1,6 +1,27 @@
 use super::*;
 use crate::config::GainConfig;
 
+#[test]
+fn every_filter_editor_renders_without_changing_settings() {
+    let ctx = egui::Context::default();
+    let mut filters: Vec<_> = FilterKind::ALL
+        .into_iter()
+        .enumerate()
+        .map(|(i, kind)| FilterConfig::new(i as u64 + 1, kind.default_settings()))
+        .collect();
+    let before = filters.clone();
+    for _ in 0..2 {
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    assert!(!filter_chain_ui(ui, &mut filters, &mut 100));
+                });
+            });
+        });
+    }
+    assert_eq!(filters, before);
+}
+
 fn filters(count: u64) -> Vec<FilterConfig> {
     (1..=count)
         .map(|id| {
